@@ -11,6 +11,27 @@
     "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js": "./vendor/react-dom.production.min.js"
   };
 </script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<script>
+  // shared leaderboard backend — if this fails to init for any reason, the app
+  // falls back to the local synthetic board (see getBoard()), it never blocks rendering
+  window.__fbBoard = null;
+  try {
+    firebase.initializeApp({
+      apiKey: "AIzaSyBX6dTjiq1nxWuu3EoynA1swNrLOAZNHVQ",
+      authDomain: "the-f1-game.firebaseapp.com",
+      databaseURL: "https://the-f1-game-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "the-f1-game",
+      storageBucket: "the-f1-game.firebasestorage.app",
+      messagingSenderId: "941804326323",
+      appId: "1:941804326323:web:ce2a805a7dbb850e890fc6"
+    });
+    window.__fbBoard = firebase.database();
+  } catch (err) {
+    console.warn("[racing] firebase init failed, leaderboard stays local-only", err);
+  }
+</script>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -250,7 +271,27 @@ class Component extends DCLogic {
       { code: 'HAS', logo: 'assets/teams/haas.png' },
     ];
     this.boards = {};
+    this.liveEntries = {};
+    this._boardUnsub = null;
     this.state = { idx: 0, anchors: this.defaultAnchors(), result: null, dirty: false, driverName: '', team: this.teams[0].code, teamMenuOpen: false, animTime: null };
+    this.subscribeBoard(0);
+  }
+  // live cross-visitor scores for the current track, from Firebase Realtime Database.
+  // falls back to silence (board stays local-only) if firebase failed to init or errors out
+  subscribeBoard(i) {
+    if (this._boardUnsub) this._boardUnsub();
+    this._boardUnsub = null;
+    if (!window.__fbBoard) return;
+    const ref = window.__fbBoard.ref('leaderboards/' + i).orderByChild('delta').limitToFirst(30);
+    const onValue = (snap) => {
+      const entries = [];
+      snap.forEach((child) => { entries.push(child.val()); });
+      this.liveEntries[i] = entries;
+      this.setState({ liveTick: (this.state.liveTick || 0) + 1 });
+    };
+    const onErr = (err) => console.warn('[racing] leaderboard sync failed', err);
+    ref.on('value', onValue, onErr);
+    this._boardUnsub = () => ref.off('value', onValue);
   }
   seedBoard(i) {
     const names = ['VER','HAM','LEC','NOR','PIA','ALO','RUS','SAI','PER','STR','GAS','OCO','ALB','TSU','HUL','MAG','ZHO','RIC'];
@@ -266,7 +307,9 @@ class Component extends DCLogic {
   }
   getBoard(i) {
     if (!this.boards[i]) this.boards[i] = this.seedBoard(i);
-    return this.boards[i];
+    const live = this.liveEntries[i];
+    if (!live || !live.length) return this.boards[i];
+    return this.boards[i].concat(live).sort((a, b) => a.delta - b.delta).slice(0, 10);
   }
   loadTrack(i) {
     const p = this.puzzles[i];
@@ -376,6 +419,7 @@ class Component extends DCLogic {
   step = (d) => {
     const n = (this.state.idx + d + this.puzzles.length) % this.puzzles.length;
     this.loadTrack(n);
+    this.subscribeBoard(n);
     clearTimeout(this._exitT);
     this.setState({ idx: n, anchors: this.defaultAnchors(), result: null, dirty: false, exiting: false });
   };
@@ -626,10 +670,19 @@ class Component extends DCLogic {
   };
   enterLeaderboard = () => {
     if (this.state.driverName.length !== 3 || !this.state.result) return;
-    const board = this.getBoard(this.state.idx).slice();
-    board.push({ name: this.state.driverName, team: this.state.team, delta: this.state.result.deltaNum });
-    board.sort((a, b) => a.delta - b.delta);
-    this.boards[this.state.idx] = board.slice(0, 10);
+    const idx = this.state.idx;
+    const entry = { name: this.state.driverName, team: this.state.team, delta: this.state.result.deltaNum, ts: Date.now() };
+    if (window.__fbBoard) {
+      // the live listener (subscribeBoard) picks this up and re-renders for every
+      // connected viewer of this track once the write lands — no local mutation needed
+      window.__fbBoard.ref('leaderboards/' + idx).push(entry)
+        .catch((err) => console.warn('[racing] leaderboard submit failed', err));
+    } else {
+      const board = this.getBoard(idx).slice();
+      board.push(entry);
+      board.sort((a, b) => a.delta - b.delta);
+      this.boards[idx] = board.slice(0, 10);
+    }
     cancelAnimationFrame(this._timeRaf);
     this.setState({ anchors: this.defaultAnchors(), result: null, dirty: false, driverName: '', animTime: null });
   };

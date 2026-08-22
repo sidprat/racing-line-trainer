@@ -66,12 +66,6 @@ a{color:#35d6e8;} a:hover{color:#7ee7f2;}
       </div>
       <div style="display:flex;align-items:center;gap:14px;">
         <div style="display:flex;align-items:center;gap:8px;">
-          <button onClick="{{ prev }}" style="{{ navBtn }}">◀</button>
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:1px;color:#6d7480;min-width:52px;text-align:center;">{{ counter }}</div>
-          <button onClick="{{ next }}" style="{{ navBtn }}">▶</button>
-        </div>
-        <div style="width:1px;height:18px;background:#2c3037;"></div>
-        <div style="display:flex;align-items:center;gap:8px;">
         <div style="width:9px;height:9px;border-radius:50%;background:radial-gradient(circle at 35% 30%, #8effb0, #17c957 60%, #0a7a33);box-shadow:0 0 8px #1fd15e, 0 0 2px #000 inset;animation:ledpulse 2.4s infinite;"></div>
         <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5d646f;letter-spacing:1px;">TELEMETRY LIVE</div>
         </div>
@@ -199,7 +193,7 @@ a{color:#35d6e8;} a:hover{color:#7ee7f2;}
             <div style="display:flex;gap:8px;position:relative;">
               <div style="position:relative;">
                 <button onClick="{{ toggleTeamMenu }}" style="{{ teamBtnStyle }}">
-                  <img src="{{ teamLogo }}" alt="" style="width:100%;height:100%;object-fit:contain;">
+                  <img src="{{ teamLogo }}" alt="" style="width:28px;height:28px;object-fit:contain;flex-shrink:0;">
                   <div style="{{ chevronStyle }}">
                     <svg viewBox="0 0 10 6" width="8" height="5"><path d="M1 1 L5 5 L9 1" stroke="#c3c8d1" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                   </div>
@@ -257,7 +251,8 @@ class Component extends DCLogic {
       { track: 'LAS VEGAS', mini: [554,888,572,868,590,848,589,824,564,815,539,822,518,837,497,854,471,856,447,844,431,824,425,798,424,772,424,745,424,719,424,692,423,665,423,639,423,612,423,586,423,559,422,532,422,506,422,479,422,453,421,426,421,399,421,373,438,359,464,359,491,359,517,360,544,360,568,351,587,332,599,309,604,283,593,265,576,248,586,224,597,200,581,183,554,181,528,180,501,180,475,179,448,178,421,178,395,174,369,170,346,158,328,138,316,114,305,90,295,65,282,43,262,25,238,14,213,6,187,0,168,11,157,35,144,58,132,82,120,105,107,129,94,152,80,175,68,198,57,223,48,248,41,273,33,299,26,324,21,350,16,377,13,403,11,430,9,456,9,483,9,509,9,536,9,562,10,589,10,616,9,642,8,669,7,695,6,722,5,749,4,775,3,802,3,828,2,855,2,881,2,908,1,935,0,961,22,971,41,988,66,997,93,999,119,999,146,1000,172,1000,199,1000,225,999,252,999,279,999,305,999,332,999,358,999,385,999,411,995,438,991,463,984,484,967,501,947,519,927,537,908], hi: [25,42], corners: 'T5 – T9', real: 1, w: [100,1000,73,955,45,910,18,866,0,818,36,782,81,757,127,731,172,705,218,679,263,653,308,626,353,599,393,565,415,519,429,469,436,417,433,365,421,314,401,265,375,220,326,231,277,229,244,190,238,139,237,86,232,34,198,0,147,6,100,28] },
     ];
     this._cache = {};
-    this.loadTrack(0);
+    const today = this.dailyIndex();
+    this.loadTrack(today);
     this.svgRef = React.createRef();
     this.drag = null;
     this.teams = [
@@ -273,8 +268,14 @@ class Component extends DCLogic {
     this.boards = {};
     this.liveEntries = {};
     this._boardUnsub = null;
-    this.state = { idx: 0, anchors: this.defaultAnchors(), result: null, dirty: false, driverName: '', team: this.teams[0].code, teamMenuOpen: false, animTime: null };
-    this.subscribeBoard(0);
+    this.state = { idx: today, anchors: this.defaultAnchors(), result: null, dirty: false, driverName: '', team: this.teams[0].code, teamMenuOpen: false, animTime: null };
+    this.subscribeBoard(today);
+  }
+  // one puzzle a day, shared by everyone (UTC day boundary), cycling through all 20 every 20 days
+  dailyIndex() {
+    const epoch = Date.UTC(2025, 0, 1);
+    const days = Math.floor((Date.now() - epoch) / 86400000);
+    return ((days % this.puzzles.length) + this.puzzles.length) % this.puzzles.length;
   }
   // live cross-visitor scores for the current track, from Firebase Realtime Database.
   // falls back to silence (board stays local-only) if firebase failed to init or errors out
@@ -416,13 +417,6 @@ class Component extends DCLogic {
     }
     return pts;
   }
-  step = (d) => {
-    const n = (this.state.idx + d + this.puzzles.length) % this.puzzles.length;
-    this.loadTrack(n);
-    this.subscribeBoard(n);
-    clearTimeout(this._exitT);
-    this.setState({ idx: n, anchors: this.defaultAnchors(), result: null, dirty: false, exiting: false });
-  };
 
   cubic(p, t) {
     const u = 1 - t;
@@ -858,12 +852,12 @@ class Component extends DCLogic {
     const enterStyle = enterDisabled
       ? cbtn + 'color:#4b515a;background:#1a1d21;border:1px solid #23262b;cursor:not-allowed;box-shadow:0 2px 6px rgba(0,0,0,.45) inset;'
       : cbtn + 'animation:checkWake .42s cubic-bezier(.34,1.56,.64,1) both;color:#14171b;background:linear-gradient(180deg,#ffffff 0%,#e9ebee 55%,#cdd0d4 100%);border:1px solid #ffffff;cursor:pointer;text-shadow:0 1px 0 rgba(255,255,255,.6);box-shadow:0 10px 24px rgba(255,255,255,.16), 0 2px 0 rgba(255,255,255,.55) inset, 0 -6px 12px rgba(0,0,0,.28) inset;';
-    // same dark chrome as the prev/next puzzle nav buttons, just larger, with a logo instead of a label
+    // same dark chrome as the leaderboard-row chips, reused for the team button/menu
     const navChrome = 'display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,#2c3037,#191c20);border:1px solid #3c4048;box-shadow:0 2px 6px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.07) inset;';
     const selTeam = this.teams.find(t => t.code === this.state.team) || this.teams[0];
-    const teamBtnStyle = 'width:44px;height:44px;flex-shrink:0;border-radius:10px;padding:7px;position:relative;' + navChrome;
-    const chevronStyle = 'position:absolute;right:-6px;bottom:-6px;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#3a3f47,#22262c);border:1px solid #4a4f58;box-shadow:0 2px 4px rgba(0,0,0,.5);pointer-events:none;';
-    const teamMenuStyle = 'position:absolute;bottom:52px;left:0;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;background:#16181c;border:1px solid #3c4048;border-radius:10px;padding:12px;box-shadow:0 10px 24px rgba(0,0,0,.55);z-index:20;width:190px;';
+    const teamBtnStyle = 'width:64px;height:44px;flex-shrink:0;border-radius:10px;padding:0 10px;' + navChrome + 'justify-content:space-between;';
+    const chevronStyle = 'display:flex;align-items:center;justify-content:center;width:14px;height:14px;flex-shrink:0;';
+    const teamMenuStyle = 'position:absolute;bottom:52px;left:0;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;background:#16181c;border:1px solid #3c4048;border-radius:10px;padding:14px;box-shadow:0 10px 24px rgba(0,0,0,.55);z-index:20;width:210px;';
     const teamOptions = this.teams.map(t => ({
       code: t.code,
       logo: t.logo,
@@ -912,12 +906,9 @@ class Component extends DCLogic {
     const timeStyle = 'font-size:17px;font-weight:600;letter-spacing:1px;color:' + timeColor + ';text-shadow:0 0 8px ' + timeGlow + ';';
     const st = this.center[this.startIdx];
     const deg = Math.atan2(st.ty, st.tx) * 180 / Math.PI;
-    const navBtn = 'width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#9aa2ad;font-family:\'Titillium Web\',sans-serif;font-size:12px;background:linear-gradient(180deg,#2c3037,#191c20);border:1px solid #3c4048;box-shadow:0 2px 6px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.07) inset;';
     return {
       trackName: pz.track, cornerName: pz.corners,
       miniPath, miniHi, miniBox, miniW,
-      counter: String(this.state.idx + 1).padStart(2, '0') + ' / ' + String(this.puzzles.length).padStart(2, '0'),
-      prev: () => this.step(-1), next: () => this.step(1), navBtn,
       carStyle: 'position:absolute;left:' + ((st.x - 150) / 690 * 100).toFixed(2) + '%;top:' + ((st.y - 8) / 712 * 100).toFixed(2)
         + '%;width:10.9%;transform:translate(-50%,-50%) rotate(' + deg.toFixed(1) + 'deg);pointer-events:none;filter:drop-shadow(0 3px 5px rgba(0,0,0,.6));',
       startT: 'translate(' + st.x.toFixed(1) + ',' + st.y.toFixed(1) + ') rotate(' + (deg + 90).toFixed(1) + ')',
